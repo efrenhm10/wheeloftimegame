@@ -9,6 +9,8 @@ import { AllyManager } from './allies.js';
 import { MissionEngine, MISSION_BY_ID } from './missions.js';
 import { UI } from './ui.js';
 import { SisterManager, TowerPolitics, normalizePolitics } from './towerPolitics.js';
+import { Assignments } from './assignments.js';
+import { Ascension } from './ascension.js';
 
 const SAVE_KEY = 'wot-aes-sedai:save:v1';
 const SAVE_VERSION = 1;
@@ -58,6 +60,8 @@ class Game {
     this.weaver = new Weaver(this);
     this.missions = new MissionEngine(this);
     this.politics = new TowerPolitics(this);
+    this.assignments = new Assignments(this);
+    this.ascension = new Ascension(this);
     this.npcs = new SisterManager(this);
     this.ui = new UI(this);
     this.weekBusy = false;
@@ -219,6 +223,7 @@ class Game {
     }
     this.player.addChronicle('Arrived at the White Tower as a Novice.', 'ceremony');
     this.player.politics = normalizePolitics(null);
+    this.ascension.ensureState();
     this.politics.generateWeek();
     this.pendingEnding = null;
     this.save();
@@ -242,6 +247,7 @@ class Game {
       return;
     }
     this.player.politics = normalizePolitics(this.player.politics);
+    this.ascension.ensureState();
     if (!this.player.politics.pending.length && this.player.politics.week === 1) this.politics.generateWeek();
     this.pendingEnding = null;
     this.updateCameraZoom();
@@ -325,6 +331,7 @@ class Game {
     try {
       const ending = this.player.politics.week;
       const { lines, leftover } = this.politics.advanceWeek();
+      this.ascension.weekly(lines);
       await this.dialogue([{ speaker: `Week ${ending} ends`, tone: 'narration', text: lines.join('\n') }]);
       for (const entry of leftover) await this.politics.runEvent(entry, 'letter');
       this.save();
@@ -336,6 +343,27 @@ class Game {
       this.weekBusy = false;
     }
     this.enterHub();
+  }
+
+  startAssignment(key) {
+    if (this.state !== 'hub') return;
+    this.assignments.start(key);
+  }
+
+  /** Runs a dialogue-driven political action from the hub, then returns to it. */
+  async hubAction(fn) {
+    if (this.state !== 'hub') return;
+    this.ui.hideScreens();
+    this.state = 'briefing';
+    try {
+      await fn();
+    } catch (err) {
+      console.error('[game] political action failed', err);
+      this.ui.reportError('That plan fell apart unexpectedly; your progress was kept.');
+    } finally {
+      this.save();
+      this.enterHub();
+    }
   }
 
   async presentEvidence() {

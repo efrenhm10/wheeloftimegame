@@ -40,6 +40,8 @@ Then open <http://localhost:8000>. Any static server works, for example `npx htt
 | `missions.js` | Mission engine (`MissionEngine` / `MissionRun`), map builders, every mission, parley and the Ajah / Three Oaths ceremony |
 | `ui.js` | HUD updates, minimap with fog of war, dialogue queue, hub tabs, Ajah selection cards, toasts and rate-limited error notices |
 | `towerPolitics.js` | Weekly calendar, the strength hierarchy, Ajah influence, novice sponsorship, Tower Conflict, the conspiracy events, covert missions, the walkable Tower Halls and the Tower Coup |
+| `assignments.js` | The weekly board of assignments abroad across twelve nations: seven procedural mission types, generated region maps, road encounters and an escorted envoy |
+| `ascension.js` | The political climb: forcing a vacancy and winning a Sitter's chair, coalitions, Hall votes and Tower gold projects, the soft coup, and the Amyrlin's rule of the nations |
 | `world.js` | Tile maps, collision, line of sight, secret walls, fog of war, particle and screen-shake effects |
 | `util.js` | Math helpers, seeded RNG, event bus, safe `localStorage` wrapper |
 
@@ -65,6 +67,33 @@ Time passes in **weeks**. Each week gives you **2 actions**; every mission excep
   - **refuse** and stay loyal: shadow conspirators in *Shadows in the Corridors* to gather leverage.
   With 3 leverage you can present evidence to the Amyrlin and crush the plot.
 - **The Tower Coup.** The conspiracy erodes Stability every week. At 0 the coup begins at once, on a barricaded, burning version of the Tower map. You fight through the corridors and break a hollow wall into the Hall, choose a side at the last moment, and subdue the opposing champion. The Oaths still bind you, so you must bind and seize human foes. Then you decide who holds the stole: the old Amyrlin, the rebel leader, or yourself, if your Strength and prestige can carry the Hall. A conspirator who falls in the coup is tried and **stilled**.
+
+## Assignments abroad
+
+From Accepted onward, the Tower posts new **assignments abroad** every week (2 for Accepted, 3 for Aes Sedai, 4 with an eyes-and-ears network). Each one is a fresh, generated mission in one of twelve nations, including Andor, Cairhien, Tear, Illian, Shienar, Arafel, Saldaea, Amadicia, Altara and Tarabon:
+
+| Type | What you do |
+| --- | --- |
+| Mediation | Seize agitators before tension between two noble Houses boils over, and talk down a sworn sword |
+| Escort | Bring an envoy along a road while ambushes target her |
+| Incursion | Seal Shadow rifts, then kill the Myrddraal leading the fist |
+| A man who channels | Stop him: shield him, or wear him down and seize him (or kill him) |
+| Investigation | Find three pieces of proof in a city, then take the Darkfriend cell's leader |
+| Healing | Heal villagers dying of sickness while Darkhounds hunt them |
+| Relic recovery | Cross a trapped ruin and break a hollow wall to reach the vault |
+
+Your **Ajah's head sends one assignment a week** suited to your Ajah (★): mediation for Gray, incursions for Green, healing for Yellow, channelers for Red, investigations for Blue and White, relics for Brown. On the road you may meet Trolloc raiders, a Darkhound pack, bandits, Whitecloaks (more often in Amadicia), a Gray Man, or a **man who channels**. Any sister may defend herself against him: a man holding saidin against you is the Third Oath's "last extreme". Success raises that nation's regard for the Tower, your Ajah's influence and your favor; failure lowers them.
+
+## The ascension
+
+1. **Aes Sedai.** Build **prestige** (assignments abroad), **favor** with your Ajah (back it in the Hall and run private errands for its head in the Tower Halls), and **Strength** (sisters 2 or more below you must defer).
+2. **Sitter.** The chairs are full, so you must empty one first:
+   - **the Gray method:** find a legal flaw in the incumbent's appointment (Control-based; best for Gray, White and Brown);
+   - **the covert method:** have a ruler whose regard is 65 or more call her away;
+   - **challenging her precedence**, if you stand above her in the Power.
+
+   Then you spend favor to out-vote rival candidates. As a Sitter you get an extra action each week and a Hall vote every week. **Coalitions** with other Ajahs carry votes (4 of 7 Ajahs is a majority) and can **block the Amyrlin's decrees**. **Tower gold** funds projects: an eyes-and-ears network, novice schools, Borderland garrisons, Warder yards, and your Ajah's library.
+3. **Amyrlin Seat.** Take it by the **soft coup** (a coalition of four Ajahs while Tower Stability is 35 or below) or the **hard coup** (back the conspiracy and seize the throne room). As Amyrlin you are of all Ajahs: **every Ajah's Mastery Weave** answers you. In the Amyrlin's study you deploy forces against each nation's rising Shadow threat and fund decrees (a Gathering of Kings, mustering Warders). You also answer the gravest crisis yourself from your assignment board.
 
 ## Ajah class templates
 

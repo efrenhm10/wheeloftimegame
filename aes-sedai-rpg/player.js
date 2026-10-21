@@ -277,6 +277,7 @@ export class Player {
 
   get title() {
     if (this.flags.amyrlin) return 'The Amyrlin Seat';
+    if (this.flags.sitter && this.ajahDef) return `Sitter for the ${this.ajahDef.name} Ajah`;
     if (this.rank.id === 'aes_sedai' && this.ajahDef) return `Aes Sedai of the ${this.ajahDef.name} Ajah`;
     return this.rank.title;
   }
@@ -443,8 +444,13 @@ export class Player {
     this.addChronicle(`Chose the ${def.name} Ajah: ${def.epithet}.`, 'ceremony');
   }
 
+  get maxWarders() {
+    const base = this.mod('maxWarders', 0);
+    return base ? base + (this.politics?.projects?.warder_yards ? 1 : 0) : 0;
+  }
+
   bondWarder(announce = true) {
-    const max = this.mod('maxWarders', 0);
+    const max = this.maxWarders;
     const living = this.warders.filter((w) => w.alive).length;
     if (living >= max) return null;
     const used = new Set(this.warders.map((w) => w.name));
@@ -640,6 +646,13 @@ export class Player {
         const a0 = Math.PI * 0.55 + (i * Math.PI * 0.9) / bands.length;
         ctx.arc(0, 0, this.radius - 1.5, a0, a0 + (Math.PI * 0.9) / bands.length);
         ctx.stroke();
+      });
+    } else if (this.flags.amyrlin) {
+      // The Amyrlin's stole, striped in the colours of all seven Ajahs.
+      const stripes = Object.values(AJAHS).map((a) => a.color);
+      stripes.forEach((color, i) => {
+        ctx.fillStyle = color;
+        ctx.fillRect(-this.radius - 6 + i * 2.2, -this.radius + 1, 2.2, this.radius * 2 - 2);
       });
     } else if (this.rank.id === 'aes_sedai' && this.ajahDef) {
       ctx.fillStyle = this.ajahDef.color;

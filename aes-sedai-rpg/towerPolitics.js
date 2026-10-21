@@ -6,8 +6,15 @@ import { T, TILE, TileMap } from './world.js';
 import { AJAHS, AJAH_ORDER } from './player.js';
 import { TER_ANGREAL, WEAVES } from './magic.js';
 import { Navigator } from './enemies.js';
+import { NATION_IDS } from './assignments.js';
 
 export const ACTIONS_PER_WEEK = 2;
+
+/** Sitters and the Amyrlin carry more of the Tower's business: one extra action a week. */
+export function actionsPerWeek(player) {
+  return ACTIONS_PER_WEEK + (player?.flags?.sitter || player?.flags?.amyrlin ? 1 : 0);
+}
+
 const LEVERAGE_NEEDED = 3;
 const CONSPIRACY_DRIFT = 4;
 
@@ -74,6 +81,11 @@ export function defaultPolitics(seed = Math.floor(Math.random() * 1e9)) {
     shawlWeek: null,
     coup: null,
     amyrlinId: 'amyrlin',
+    board: [],
+    boardWeek: 0,
+    boardRank: -1,
+    nations: Object.fromEntries(NATION_IDS.map((id) => [id, 50])),
+    assignmentsDone: 0,
     flags: {},
     log: [],
     seed,
@@ -86,6 +98,8 @@ export function normalizePolitics(raw) {
   if (!raw || typeof raw !== 'object') return base;
   const out = { ...base, ...raw };
   out.influence = { ...base.influence, ...(raw.influence ?? {}) };
+  out.nations = { ...base.nations, ...(raw.nations ?? {}) };
+  out.board = Array.isArray(raw.board) ? raw.board : [];
   out.sisters = Array.isArray(raw.sisters) && raw.sisters.length ? raw.sisters : base.sisters;
   out.novices = Array.isArray(raw.novices) ? raw.novices : base.novices;
   out.pending = Array.isArray(raw.pending) ? raw.pending.filter((p) => p && EVENTS[p.id]) : [];
@@ -102,6 +116,7 @@ export function normalizePolitics(raw) {
 // ---------------------------------------------------------------------------
 
 const isSister = (player) => player.rankIndex === 2;
+const isAmyrlin = (player) => !!player.flags.amyrlin;
 
 /**
  * Each event: weight(pol, player) → 0 means ineligible. pickSister chooses who brings it.
@@ -146,7 +161,7 @@ export const EVENTS = {
         text: 'The Hall has asked for a sister to escort the Cairhienin envoy. I meant to take it myself. I assume you will not object?',
         choices: [
           { label: 'Command her to step aside.', value: 'command', detail: `She must defer to you (Strength ${tp.player.stats.strength} vs ${sister.strength}) · +4 prestige, +3 ${tp.player.ajahDef?.name ?? ''} influence` },
-          { label: 'Let her have it, graciously.', value: 'yield', detail: '+15 disposition · +2 standing' },
+          { label: 'Let her have it, graciously.', value: 'yield', detail: '+15 disposition · +2 favor' },
         ],
       });
       if (choice === 'command') {
@@ -163,7 +178,8 @@ export const EVENTS = {
   },
   seniority_clash: {
     title: 'Seniority',
-    weight: (pol, p) => (isSister(p) ? 2 : 0),
+    weight: (pol, p) => (isSister(p) && !isAmyrlin(p) ? 2 : 0),
+    obsolete: (pol, p) => isAmyrlin(p),
     pickSister: (tp) => tp.randomSister((s) => s.strength > tp.player.stats.strength && s.role !== 'amyrlin' && s.ajah !== tp.player.ajah),
     async run(ctx) {
       const { tp, sister } = ctx;
@@ -171,7 +187,7 @@ export const EVENTS = {
       const choices = [{ label: 'Comply.', value: 'comply', detail: 'Lose one action this week' }];
       if (rel === 'below') choices.push({ label: 'Push back.', value: 'push', detail: `She outranks you in the Power (${sister.strength} vs ${tp.player.stats.strength}) · Tower Conflict +35` });
       else choices.push({ label: 'Refuse. You are her equal.', value: 'refuse', detail: 'Tower Conflict +10' });
-      choices.push({ label: 'Appeal to the head of your Ajah.', value: 'appeal', detail: '-5 standing · Tower Conflict +10' });
+      choices.push({ label: 'Appeal to the head of your Ajah.', value: 'appeal', detail: '-5 favor · Tower Conflict +10' });
       const choice = await ctx.ask({
         speaker: tp.label(sister),
         text: 'Your Ajah\'s business can wait. I need a sister of your talents in the Hall\'s archive for the rest of the week, cataloguing. Do not make me ask twice.',
@@ -204,9 +220,9 @@ export const EVENTS = {
         speaker: tp.label(sister),
         text: `A word, sister. Something has come to the ${AJAHS[sister.ajah].name} that your Ajah ought to know, and doesn't. I could tell you. A favour for a favour, someday.`,
         choices: [
-          { label: 'Accept her intelligence.', value: 'accept', detail: `+8 prestige${tp.pol.conspiracy?.active ? ', +1 leverage on the conspiracy' : ''} · -12 standing with the ${myAjah} Ajah` },
-          { label: 'Decline politely.', value: 'decline', detail: '+4 standing' },
-          { label: 'Report the approach to your Ajah head.', value: 'report', detail: '+8 standing · she will not forget' },
+          { label: 'Accept her intelligence.', value: 'accept', detail: `+8 prestige${tp.pol.conspiracy?.active ? ', +1 leverage on the conspiracy' : ''} · -12 favor with the ${myAjah} Ajah` },
+          { label: 'Decline politely.', value: 'decline', detail: '+4 favor' },
+          { label: 'Report the approach to your Ajah head.', value: 'report', detail: '+8 favor · she will not forget' },
         ],
       });
       if (choice === 'accept') {
@@ -256,7 +272,8 @@ export const EVENTS = {
   },
   ajah_summons: {
     title: 'Summoned by your Ajah',
-    weight: (pol, p) => (isSister(p) && (pol.standing < 30 || pol.standing > 70) ? 3 : 0),
+    weight: (pol, p) => (isSister(p) && !isAmyrlin(p) && (pol.standing < 30 || pol.standing > 70) ? 3 : 0),
+    obsolete: (pol, p) => isAmyrlin(p),
     pickSister: (tp) => tp.sisterById(`head_${tp.player.ajah}`),
     async run(ctx) {
       const { tp, sister } = ctx;
@@ -435,6 +452,45 @@ export const EVENTS = {
       }
     },
   },
+  hall_vote: {
+    title: 'A vote in the Hall',
+    weight: () => 0,
+    obsolete: (pol, p) => isAmyrlin(p) || !p.flags.sitter,
+    pickSister: (tp) => tp.motionSponsor(tp.nextMotion()),
+    async run(ctx) {
+      const { tp } = ctx;
+      const motion = tp.nextMotion();
+      const sponsor = tp.motionSponsor(motion);
+      const rel = tp.compare(sponsor);
+      const own = motion.sponsor === tp.player.ajah;
+      const choice = await ctx.ask({
+        speaker: 'The Hall of the Tower',
+        tone: 'ceremony',
+        text: `${motion.text} ${motion.sponsor === 'amyrlin' ? 'It is the Amyrlin\'s own decree; to block it, the Hall must vote it down.' : sponsor ? `${sponsor.name} of the ${AJAHS[sponsor.ajah].name} brought the motion and is watching how you stand.` : ''} Your coalition: ${tp.pol.coalition?.length ?? 1} of 7 Ajahs.`,
+        choices: [
+          { label: 'Stand in favour.', value: 'yes', detail: motion.yesNote },
+          { label: 'Stand against.', value: 'no', detail: `${motion.noNote}${rel === 'below' ? ' · she outranks you: Conflict +15' : ''}` },
+          { label: 'Remain seated (abstain).', value: 'abstain', detail: 'No effect' },
+        ],
+      });
+      tp.pol.flags.motionIndex = (tp.pol.flags.motionIndex ?? 0) + 1;
+      const result = tp.game.ascension.decideVote(choice, motion);
+      if (result.passes) motion.yes(tp);
+      else motion.no(tp);
+      for (const line of result.lines) ctx.note(line);
+      if (choice === 'abstain') return;
+      tp.player.prestige += 2;
+      if (choice === 'yes') {
+        tp.disposition(sponsor, 10);
+        if (own) tp.standing(5);
+      } else {
+        tp.disposition(sponsor, -15);
+        if (own) tp.standing(-10);
+        if (rel === 'below') ctx.note(tp.addConflict(15, `You stood against ${sponsor.name} in the Hall.`));
+      }
+      tp.log(`Hall vote: ${motion.short} ${result.passes ? 'passed' : 'failed'}; you stood ${choice === 'yes' ? 'in favour' : 'against'}.`, 'politics');
+    },
+  },
   stability_tremor: {
     title: 'Unrest',
     weight: (pol) => (pol.conspiracy?.active && pol.stability < 45 ? 2 : 0),
@@ -456,6 +512,73 @@ export const EVENTS = {
     },
   },
 };
+
+/** Motions brought before the Hall while you sit in it. */
+const MOTIONS = [
+  {
+    short: 'reinforce the Borderlands', sponsor: 'green',
+    text: 'The Hall moves to send twenty sisters to the Borderland garrisons, at the cost of the Tower\'s presence in the south.',
+    yesNote: 'Stability +3 · the Borderlands grateful, Tear less so', noNote: 'Green influence falls',
+    yes: (tp) => { tp.adjustStability(3); tp.influence('green', 3); tp.nation('shienar', 8); tp.nation('arafel', 6); tp.nation('tear', -4); },
+    no: (tp) => { tp.influence('green', -2); tp.nation('shienar', -5); },
+  },
+  {
+    short: 'censure the Red Ajah', sponsor: 'blue',
+    text: 'The Hall moves to censure the Red Ajah for gentling a man who had harmed no one.',
+    yesNote: 'Red influence -6 · the Reds will not forget', noNote: 'Red influence +3, Blue -2',
+    yes: (tp) => { tp.influence('red', -6); tp.disposition(tp.sisterById('head_red'), -20); },
+    no: (tp) => { tp.influence('red', 3); tp.influence('blue', -2); },
+  },
+  {
+    short: 'recognize a claimant in Cairhien', sponsor: 'blue',
+    text: 'The Hall moves to recognize the new claimant to the Sun Throne of Cairhien.',
+    yesNote: 'Cairhien\'s regard +10 · Stability -2', noNote: 'Cairhien\'s regard -6',
+    yes: (tp) => { tp.nation('cairhien', 10); tp.adjustStability(-2); tp.influence('blue', 2); },
+    no: (tp) => { tp.nation('cairhien', -6); },
+  },
+  {
+    short: 'open the Thirteenth Depository', sponsor: 'brown',
+    text: 'The Hall moves to open the Thirteenth Depository to the Brown Ajah\'s scholars.',
+    yesNote: 'Brown influence +5, White -2', noNote: 'Brown influence -3',
+    yes: (tp) => { tp.influence('brown', 5); tp.influence('white', -2); tp.adjustStability(-1); },
+    no: (tp) => { tp.influence('brown', -3); },
+  },
+  {
+    short: 'rein in the Whitecloaks', sponsor: 'gray',
+    text: 'The Hall moves to demand that Amadicia rein in the Children of the Light.',
+    yesNote: 'Stability +2 · Amadicia\'s regard -10', noNote: 'Amadicia\'s regard +4',
+    yes: (tp) => { tp.nation('amadicia', -10); tp.adjustStability(2); tp.influence('gray', 2); },
+    no: (tp) => { tp.nation('amadicia', 4); },
+  },
+  {
+    short: 'search the villages for novices', sponsor: 'yellow',
+    text: 'The Hall moves to send sisters through the villages to search for girls who can learn to channel.',
+    yesNote: 'Stability +4 · every nation\'s regard +2', noNote: 'Yellow influence -2',
+    yes: (tp) => { tp.adjustStability(4); tp.influence('yellow', 2); for (const id of NATION_IDS) tp.nation(id, 2); },
+    no: (tp) => { tp.influence('yellow', -2); },
+  },
+  {
+    short: 'the Amyrlin\'s tithe', sponsor: 'amyrlin',
+    text: 'The Amyrlin Seat decrees that every Ajah shall tithe a fifth of its funds to the Tower\'s treasury.',
+    yesNote: 'Stability +4 · every Ajah\'s influence -2', noNote: 'Blocking it weakens the Amyrlin: Stability -3',
+    yes: (tp) => { tp.adjustStability(4); for (const a of AJAH_ORDER) tp.influence(a, -2); },
+    no: () => {},
+  },
+  {
+    short: 'the Amyrlin\'s travel edict', sponsor: 'amyrlin',
+    text: 'The Amyrlin Seat decrees that no sister may leave Tar Valon without her leave.',
+    yesNote: 'Stability +3 · every nation\'s regard -2', noNote: 'Blocking it weakens the Amyrlin: Stability -3',
+    yes: (tp) => { tp.adjustStability(3); for (const id of NATION_IDS) tp.nation(id, -2); },
+    no: () => {},
+  },
+  {
+    short: 'investigate the Black Ajah', sponsor: 'white',
+    text: 'A Sitter moves that the Hall investigate the rumours of a Black Ajah within the Tower.',
+    yesNote: 'Stability -4 (fear) · +4 prestige, White +3', noNote: 'White influence -2',
+    yes: (tp) => { tp.adjustStability(-4); tp.player.prestige += 4; tp.influence('white', 3); },
+    no: (tp) => { tp.influence('white', -2); },
+  },
+];
 
 // ---------------------------------------------------------------------------
 // Tower map (shared by the Halls, covert missions and the Coup)
@@ -801,6 +924,19 @@ export class TowerPolitics {
     }
   }
 
+  nation(id, delta) {
+    if (!(id in this.pol.nations)) return;
+    this.pol.nations[id] = clamp(this.pol.nations[id] + delta, 0, 100);
+  }
+
+  nextMotion() {
+    return MOTIONS[(this.pol.flags.motionIndex ?? 0) % MOTIONS.length];
+  }
+
+  motionSponsor(motion) {
+    return motion.sponsor === 'amyrlin' ? this.sisterById(this.pol.amyrlinId) : this.sisterById(`head_${motion.sponsor}`);
+  }
+
   addLeverage(n, reason) {
     this.pol.leverage = clamp(this.pol.leverage + n, 0, 9);
     if (reason) this.log(`Leverage: ${reason}`, 'politics');
@@ -881,7 +1017,7 @@ export class TowerPolitics {
 
     pol.week += 1;
     pol.penance = Math.max(0, pol.penance - 1);
-    pol.actions = pol.penance > 0 ? 0 : Math.max(0, ACTIONS_PER_WEEK - (pol.flags.borrowed ?? 0));
+    pol.actions = pol.penance > 0 ? 0 : Math.max(0, actionsPerWeek(p) - (pol.flags.borrowed ?? 0));
     if (pol.penance > 0) pol.actions = 0;
     pol.flags.borrowed = 0;
     pol.sponsoredThisWeek = false;
@@ -914,6 +1050,9 @@ export class TowerPolitics {
     const p = this.player;
     const count = p.rankIndex === 2 ? 2 : 1;
     const rng = new RNG(pol.seed + pol.week * 97);
+    if (p.flags.sitter && !p.flags.amyrlin && !pol.pending.some((e) => e.id === 'hall_vote')) {
+      pol.pending.unshift({ id: 'hall_vote', sisterId: this.motionSponsor(this.nextMotion())?.id ?? null });
+    }
     for (let i = 0; i < count; i++) {
       const pool = Object.entries(EVENTS)
         .map(([id, ev]) => [id, ev.weight(pol, p)])
@@ -931,6 +1070,11 @@ export class TowerPolitics {
   async runEvent(entry, via = 'hall') {
     const ev = EVENTS[entry.id];
     if (!ev) return;
+    // Events overtaken by your rise (a Sitter's vote once you are Amyrlin) quietly lapse.
+    if (ev.obsolete?.(this.pol, this.player)) {
+      this.pol.pending = this.pol.pending.filter((e) => e !== entry);
+      return;
+    }
     const game = this.game;
     const sister = entry.sisterId ? this.sisterById(entry.sisterId) : null;
     const notes = [];
@@ -1007,13 +1151,15 @@ export class TowerPolitics {
     const lines = [];
     if (winner === 'player') {
       p.flags.amyrlin = true;
+      p.flags.sitter = false;
+      this.game.ascension.initCrown();
       if (amyrlin) amyrlin.status = 'deposed';
       if (leader) leader.status = 'confined';
       if (p.ajah) this.influence(p.ajah, 25);
       pol.stability = 55;
       p.prestige += 80;
       p.addChronicle('Seized the Amyrlin Seat in the chaos of the Tower Coup.', 'ceremony');
-      lines.push('You are raised Amyrlin Seat. The stole is striped in all seven colours, for you are of all Ajahs now.');
+      lines.push('You are raised Amyrlin Seat. The stole is striped in all seven colours, for you are of all Ajahs now. Every Ajah\'s Mastery Weave answers you, and the nations\' troubles are yours: see the Amyrlin\'s study in the Tower tab.');
     } else if (winner === 'rebel') {
       if (amyrlin) amyrlin.status = 'deposed';
       if (leader) {
@@ -1113,12 +1259,20 @@ export class TowerPolitics {
     }
     if (own) {
       const choices = [{ label: 'Ask where you stand.', value: 'stand' }];
-      if (pol.conspiracy?.active && pol.faction === 'loyalist') choices.push({ label: 'Warn her about the conspiracy.', value: 'warn', detail: '+6 standing' });
+      if (pol.flags.errandWeek !== pol.week) choices.push({ label: 'Offer to run a private errand for her.', value: 'errand', detail: pol.actions > 0 ? 'One action · +12 favor, +60 XP' : 'No actions left this week' });
+      if (pol.conspiracy?.active && pol.faction === 'loyalist') choices.push({ label: 'Warn her about the conspiracy.', value: 'warn', detail: '+6 favor' });
       choices.push({ label: 'Take your leave.', value: 'leave' });
       const choice = (await game.dialogue([{ speaker: this.label(head), text: `Sister. The ${AJAHS[head.ajah].name} holds ${pol.influence[head.ajah]} parts in a hundred of the Tower's ear this week. I would like more.`, choices }]))[0];
       if (choice === 'stand') {
         const verdict = pol.standing > 70 ? 'You are one of our best. Do not let it go to your head.' : pol.standing < 30 ? 'You have been an embarrassment. Mend it.' : 'Adequate. Bring us novices, and keep your hands clean.';
-        await game.dialogue([{ speaker: this.label(head), text: `${verdict} (Standing ${pol.standing}/100)` }]);
+        await game.dialogue([{ speaker: this.label(head), text: `${verdict} (Favor ${pol.standing}/100)` }]);
+      } else if (choice === 'errand' && pol.actions > 0) {
+        pol.flags.errandWeek = pol.week;
+        this.spendAction();
+        this.standing(12);
+        p.gainXP(60);
+        const errands = ['carry a sealed letter to a Sitter of another Ajah, and bring back her answer unread', 'sit in on a novice\'s testing and report who she favours', 'learn what the Keeper of the Chronicles discussed with the Amyrlin last night', 'deliver a purse to a merchant in the city who sells more than wine'];
+        await game.dialogue([{ speaker: this.label(head), text: `Good. I need you to ${errands[pol.week % errands.length]}. Quietly.` }, { speaker: 'A private errand', tone: 'success', text: 'Done before supper. +12 favor with your Ajah · +60 XP' }]);
       } else if (choice === 'warn' && !pol.flags.warnedHead) {
         pol.flags.warnedHead = true;
         this.standing(6);
@@ -1168,7 +1322,7 @@ export class TowerPolitics {
       speaker: novice.name,
       text: `A novice with a rare talent for ${novice.talent} and a potential of ${novice.potential}. Sponsoring her would bind her to the ${p.ajahDef.name} Ajah's interest when she is raised.${rival ? ` ${rival.name} of the ${AJAHS[rival.ajah].name} has been watching her too.` : ''}`,
       choices: [
-        { label: `Sponsor her for the ${p.ajahDef.name}.`, value: 'yes', detail: `+${2 + Math.floor(novice.potential / 4)} influence now, +1 every week · +5 standing${rival ? ' · a rivalry with ' + rival.name : ''}` },
+        { label: `Sponsor her for the ${p.ajahDef.name}.`, value: 'yes', detail: `+${2 + Math.floor(novice.potential / 4)} influence now, +1 every week · +5 favor${rival ? ' · a rivalry with ' + rival.name : ''}` },
         { label: 'Not now.', value: 'no' },
       ],
     }]))[0];

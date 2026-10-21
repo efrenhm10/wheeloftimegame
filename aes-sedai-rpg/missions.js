@@ -6,6 +6,7 @@ import { T, TILE, TileMap } from './world.js';
 import { AJAHS, Player, RANKS, SCARS } from './player.js';
 import { ELEMENTS, TER_ANGREAL, WEAVES } from './magic.js';
 import { POLITICS_MISSIONS } from './towerPolitics.js';
+import { ASSIGNMENT_MISSIONS } from './assignments.js';
 
 const at = (c, r) => ({ x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 });
 const rankIndexOf = (id) => RANKS.findIndex((r) => r.id === id);
@@ -20,6 +21,8 @@ export class MissionRun {
     this.engine = engine;
     this.game = engine.game;
     this.def = def;
+    this.title = def.title;
+    this.typeLabel = null;
     this.state = 'running';
     this.time = 0;
     this.objectives = [];
@@ -1422,7 +1425,7 @@ export const MISSIONS = [
     async briefing(ctx) {
       await ctx.say([
         { speaker: 'Highest of the Red', text: 'A man channels in the Borderlands and calls himself the Dragon Reborn. Kaedran Vos. Three days\' ride of broken country lie between you and him, and every league of it crawls with Shadowspawn.' },
-        { speaker: 'Highest of the Red', text: 'Saidin is tainted; he will go mad and kill thousands. Shield him with Spirit, cut him off from the Source, and seize him. The Oaths forbid you to strike him down unless your life hangs by a thread.' },
+        { speaker: 'Highest of the Red', text: 'Saidin is tainted; he will go mad and kill thousands. Shield him with Spirit, cut him off from the Source, and seize him. The Hall wants him alive. Shielded, he can be taken; if he turns saidin on you, the Third Oath will not stay your hand.' },
         { speaker: 'Narrator', tone: 'narration', text: 'Rogue-lite hunt: three random stages. Your health does not recover between them. After each stage you will choose a boon.' },
       ]);
       return true;
@@ -1935,7 +1938,7 @@ export const MISSIONS = [
   },
 ];
 
-MISSIONS.push(...POLITICS_MISSIONS);
+MISSIONS.push(...POLITICS_MISSIONS, ...ASSIGNMENT_MISSIONS);
 
 export const MISSION_BY_ID = Object.fromEntries(MISSIONS.map((m) => [m.id, m]));
 
@@ -1976,7 +1979,7 @@ export class MissionEngine {
   /** Returns { def, state: 'available'|'locked'|'completed'|'closed', reason, outcome } for each visible mission. */
   catalog() {
     const p = this.game.player;
-    return MISSIONS.filter((def) => !def.requires.ajah || def.requires.ajah === p.ajah)
+    return MISSIONS.filter((def) => !def.hidden && (!def.requires.ajah || def.requires.ajah === p.ajah))
       .map((def) => ({ def, ...this.availability(def) }))
       .filter((entry) => !(entry.def.hideWhenLocked && entry.state !== 'available' && !entry.timeLocked && entry.state !== 'completed'));
   }
@@ -2277,7 +2280,7 @@ export class MissionEngine {
     p.prestige += r.prestige + bonus;
     p.adjustStats(r.stats);
     const learned = (r.learn ?? []).filter((id) => p.learn(id)).map((id) => WEAVES[id].name);
-    p.addChronicle(`${def.title}: success.`, 'success');
+    p.addChronicle(`${run.title}: success.`, 'success');
     const lines = [`+${gained} experience${levels ? ` (level ${p.level}!)` : ''}`, `+${r.prestige + bonus} prestige`];
     for (const [k, v] of Object.entries(r.stats ?? {})) lines.push(`${v > 0 ? '+' : ''}${v} ${k}`);
     if (learned.length) lines.push(`Learned: ${learned.join(', ')}`);
@@ -2287,7 +2290,7 @@ export class MissionEngine {
       if (record) lines.push(`Bonded a new Warder: ${record.name}`);
     }
     if (levels) lines.push(`${levels * 2} stat points to spend in the Tower.`);
-    await game.dialogue([{ speaker: 'Mission Complete', tone: 'success', text: `${def.title}\n\n${lines.join('\n')}` }]);
+    await game.dialogue([{ speaker: 'Mission Complete', tone: 'success', text: `${run.title}\n\n${lines.join('\n')}` }]);
   }
 
   async applyFailure(def, reason, fromAbandon = false, run = null) {
@@ -2308,8 +2311,9 @@ export class MissionEngine {
       lines.push(`Permanent scar: ${scar.label} (${Object.entries(SCARS[f.scar].effects).map(([k, v]) => `${v} ${k}`).join(', ')})`);
     }
     const abandoned = fromAbandon || reason === 'abandoned';
-    const narrative = abandoned ? `You abandoned ${def.title}. Those who were counting on you were left to their fate.` : f.text(reason);
-    p.addChronicle(`${def.title}: failed. ${narrative}`, 'failure');
+    const title = run?.title ?? def.title;
+    const narrative = abandoned ? `You abandoned ${title}. Those who were counting on you were left to their fate.` : f.text(reason);
+    p.addChronicle(`${title}: failed. ${narrative}`, 'failure');
     await game.dialogue([
       { speaker: 'Mission Failed', tone: 'danger', text: narrative },
       { speaker: 'Consequences', tone: 'danger', text: lines.join('\n') },

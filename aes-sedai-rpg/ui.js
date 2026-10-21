@@ -5,7 +5,8 @@ import { TILE, T } from './world.js';
 import { AFFINITIES, AJAHS, AJAH_ORDER, Player, STAT_IDS, STAT_INFO } from './player.js';
 import { ELEMENTS, ELEMENT_BY_ID, TER_ANGREAL, WEAVES, dangerState, weaveTierLabel } from './magic.js';
 import { WARDER_COMMANDS } from './allies.js';
-import { ACTIONS_PER_WEEK } from './towerPolitics.js';
+import { actionsPerWeek } from './towerPolitics.js';
+import { NATIONS } from './assignments.js';
 
 const $ = (id) => {
   const el = document.getElementById(id);
@@ -433,8 +434,8 @@ export class UI {
     const run = this.game.missions.run;
     this.set('missionVisible', this.el.mission, 'hidden', !run);
     if (!run) return;
-    this.set('missionTitle', this.el.missionTitle, 'text', run.def.title);
-    this.set('missionType', this.el.missionType, 'text', TYPE_LABELS[run.def.type] ?? run.def.type);
+    this.set('missionTitle', this.el.missionTitle, 'text', run.title);
+    this.set('missionType', this.el.missionType, 'text', run.typeLabel ?? TYPE_LABELS[run.def.type] ?? run.def.type);
     this.set('missionTimer', this.el.missionTimer, 'text', run.timeLimit !== null ? formatTime(run.timeLimit) : '');
     this.set('missionUrgent', this.el.missionTimer, 'data-urgent', String(run.timeLimit !== null && run.timeLimit < 20));
     const visible = run.objectives.filter((o) => !o.hidden);
@@ -760,6 +761,29 @@ export class UI {
       const a = g.player.ajahDef;
       wrap.append(h('section', { class: 'promotion', style: { '--accent': a.color } }, h('h3', { text: `${a.name} Ajah: ${a.archetype}` }), h('p', { text: a.passive.description })));
     }
+    const board = g.assignments.board();
+    if (board.length) {
+      const pol = g.player.politics;
+      wrap.append(h('h3', { class: 'chapter', text: `Assignments abroad · week ${pol.week}` }));
+      const list = h('div', { class: 'mission-list' });
+      for (const a of board) {
+        const d = g.assignments.describe(a);
+        const nation = NATIONS[a.nation];
+        const canGo = !a.done && pol.actions > 0 && !pol.coup?.pending;
+        list.append(
+          h('article', { class: `mission-card mission-card--${a.done ? 'completed' : canGo ? 'available' : 'locked'}${a.ajahTask ? ' mission-card--ajah' : ''}`, style: a.ajahTask && g.player.ajahDef ? { '--accent': g.player.ajahDef.color } : {} },
+            h('header', {},
+              h('h4', { text: d.title }),
+              h('span', { class: 'tag tag--combat', text: '◆'.repeat(a.difficulty) })),
+            a.ajahTask ? h('p', { class: 'mission-card__ajah', text: `★ Sent by the head of the ${g.player.ajahDef.name} Ajah` }) : null,
+            h('p', { text: d.summary }),
+            h('p', { class: 'mission-card__rewards', text: `1 action · ${d.rewards.xp} XP · ${d.rewards.prestige} prestige · ${nation.name}'s regard ${pol.nations?.[a.nation] ?? 50}` }),
+            h('p', { class: 'mission-card__state', text: a.done ? 'Done this week' : `${d.roads}. ${canGo ? '' : pol.actions <= 0 ? 'No actions left this week.' : ''}` }),
+            canGo ? h('button', { type: 'button', class: 'btn btn--primary', onClick: () => g.startAssignment(a.key) }, 'Set out') : null),
+        );
+      }
+      wrap.append(list, h('p', { class: 'muted', text: 'A new set of assignments is posted every week. Roads between the Tower and the kingdoms are rarely quiet.' }));
+    }
     const groups = new Map([['The White Tower', []]]);
     for (const entry of g.missions.catalog()) {
       if (!groups.has(entry.def.chapter)) groups.set(entry.def.chapter, []);
@@ -797,7 +821,7 @@ export class UI {
     const g = this.game;
     const pol = g.player.politics;
     if (!pol) return null;
-    const pips = `${'●'.repeat(pol.actions)}${'○'.repeat(Math.max(0, ACTIONS_PER_WEEK - pol.actions))}`;
+    const pips = `${'●'.repeat(pol.actions)}${'○'.repeat(Math.max(0, actionsPerWeek(g.player) - pol.actions))}`;
     const waiting = pol.pending.length;
     return h('div', { class: 'week-bar' },
       h('span', { class: 'week-bar__week', text: `Week ${pol.week}` }),
@@ -823,7 +847,7 @@ export class UI {
       h('h3', { text: 'The state of the Tower' }),
       meter('Tower Stability', pol.stability, 100, pol.stability < 25 ? 'critical' : pol.stability < 50 ? 'warn' : 'good', pol.conspiracy?.active ? 'A conspiracy erodes it every week. At zero, the Tower breaks and the coup begins.' : 'Calm, for now.'),
       meter('Your Tower Conflict', pol.conflict, 100, pol.conflict > 70 ? 'critical' : 'warn', 'Defying sisters who outrank you raises it. At 100 you are given a punishment detail.'),
-      p.rankIndex === 2 && p.ajahDef ? meter(`Standing with the ${p.ajahDef.name} Ajah`, pol.standing, 100, 'ajah', 'Accepting rival favours lowers it; serving your Ajah raises it.', p.ajahDef.color) : null,
+      p.rankIndex === 2 && p.ajahDef ? meter(`Favor with the ${p.ajahDef.name} Ajah`, pol.standing, 100, 'ajah', 'Earned by backing your Ajah and running its head\'s errands; spent to win elections.', p.ajahDef.color) : null,
       pol.faction === 'double' ? meter('Conspirators\' suspicion', pol.suspicion, 100, 'critical', 'Too high, and they will test your loyalty.') : null,
       h('div', { class: 'row-actions' },
         h('button', { type: 'button', class: 'btn btn--primary', onClick: () => g.startMission('tower_halls'), disabled: pol.coup?.pending }, 'Walk the Tower halls'),
@@ -872,12 +896,103 @@ export class UI {
         h('ul', {}, pol.novices.map((n) => h('li', { text: `${n.name}: ${n.talent}, potential ${n.potential}${n.sponsor ? ` · sponsored by the ${AJAHS[n.sponsor].name}` : ''}` }))),
         h('p', { class: 'muted', text: 'Sponsor one novice a week in the Tower Halls garden to grow your Ajah\'s influence.' })));
     }
+    if (p.rankIndex === 2) wrap.append(...this.ascensionPanels());
+    const reach = h('section', { class: 'panel' }, h('h3', { text: 'The Tower\'s reach: the nations\' regard' }));
+    for (const [id, n] of Object.entries(NATIONS).sort((a, b) => (pol.nations?.[b[0]] ?? 50) - (pol.nations?.[a[0]] ?? 50))) {
+      const v = pol.nations?.[id] ?? 50;
+      reach.append(h('div', { class: 'influence-row' }, h('span', { text: n.name }), h('div', { class: `meter meter--${v >= 60 ? 'good' : v <= 35 ? 'critical' : 'warn'}`, style: { '--fill': (v / 100).toFixed(3) } }, h('div', { class: 'meter__fill' })), h('span', { class: 'meter-row__value', text: String(v) })));
+    }
+    wrap.append(reach);
     const log = h('section', { class: 'panel' }, h('h3', { text: 'Corridor whispers' }));
     const recent = pol.log.slice(-10).reverse();
     if (!recent.length) log.append(h('p', { class: 'muted', text: 'Nothing yet. Walk the halls, or end the week.' }));
     for (const entry of recent) log.append(h('p', { class: `log-entry log-entry--${entry.tone}` }, h('span', { class: 'muted', text: `Week ${entry.week}: ` }), entry.text));
     wrap.append(log);
     return wrap;
+  }
+
+  /** The three-phase climb: standalone sister → Sitter → Amyrlin Seat. */
+  ascensionPanels() {
+    const g = this.game;
+    const p = g.player;
+    const asc = g.ascension;
+    const tp = g.politics;
+    const pol = tp.pol;
+    const office = asc.office;
+    const checklist = (items) => h('ul', { class: 'checklist' }, items.map((item) => h('li', { class: item.met ? 'checklist__item--met' : 'checklist__item--open' }, h('span', { 'aria-hidden': 'true', text: item.met ? '✓ ' : '○ ' }), item.label)));
+    const act = (fn) => () => g.hubAction(fn);
+    const panels = [];
+
+    const phases = [['sister', 'Aes Sedai', 'Build prestige, favor and strength'], ['sitter', 'Sitter', 'Force a vacancy, win the vote, lead a coalition'], ['amyrlin', 'Amyrlin Seat', 'Unite the Hall, rule the nations']];
+    panels.push(h('section', { class: 'panel panel--wide' },
+      h('h3', { text: 'The ascension' }),
+      h('ol', { class: 'roadmap' }, phases.map(([id, name, note]) => h('li', { class: `roadmap__step${id === office ? ' roadmap__step--current' : ''}` }, h('strong', { text: name }), h('span', { class: 'muted', text: note }))))));
+
+    if (office === 'sister') {
+      const panel = h('section', { class: 'panel' }, h('h3', { text: 'Phase I: a chair in the Hall' }),
+        h('p', { text: `Each Ajah's chairs in the Hall are all filled. To sit, you must first empty one, then win your Ajah's vote by spending favor.` }),
+        checklist(asc.campaignChecklist()));
+      if (asc.electionCooldown) panel.append(h('p', { class: 'muted', text: `You lost the last election. Try again in ${asc.electionCooldown} week${asc.electionCooldown > 1 ? 's' : ''}.` }));
+      const inc = asc.incumbent();
+      if (asc.campaignOpen && inc) {
+        panel.append(h('p', {}, h('strong', { text: 'The incumbent: ' }), `${inc.name}, Strength ${inc.strength}.`));
+        for (const opt of asc.vacancyOptions()) {
+          panel.append(h('div', { class: 'option-row' },
+            h('div', {}, h('strong', { text: opt.label }), h('p', { class: 'muted', text: opt.reason ? `${opt.detail} · ${opt.reason}` : opt.detail })),
+            h('button', { type: 'button', class: 'btn btn--small', disabled: !!opt.reason, onClick: act(() => asc.forceVacancy(opt.id)) }, 'Act')));
+        }
+      }
+      panels.push(panel);
+    }
+
+    if (office === 'sitter') {
+      const coalition = h('section', { class: 'panel' }, h('h3', { text: `Phase II: your coalition (${pol.coalition.length} of 7 Ajahs)` }),
+        h('p', { class: 'muted', text: 'With four Ajahs behind you, your vote carries the Hall and can block the Amyrlin\'s decrees. Vote against an ally\'s motion and she leaves you.' }));
+      for (const ajah of AJAH_ORDER) {
+        const inIt = pol.coalition.includes(ajah);
+        coalition.append(h('div', { class: 'option-row' },
+          h('div', {}, h('span', { class: 'ajah-dot', style: { '--accent': AJAHS[ajah].color } }), h('strong', { text: AJAHS[ajah].name }), h('span', { class: 'muted', text: inIt ? (ajah === p.ajah ? ' · your Ajah' : ' · allied') : ` · ${asc.allianceChance(ajah)}% to win over` })),
+          inIt ? null : h('button', { type: 'button', class: 'btn btn--small', disabled: pol.actions <= 0, onClick: act(() => asc.seekAlliance(ajah)) }, 'Seek alliance')));
+      }
+      panels.push(coalition);
+      panels.push(h('section', { class: 'panel' }, h('h3', { text: 'Phase III: the soft coup' }),
+        h('p', { text: 'When the Amyrlin is weak, a united Hall can strip her of the stole and raise you in her place. (Or back a conspiracy and take it by force.)' }),
+        checklist(asc.softCoupChecklist()),
+        h('button', { type: 'button', class: 'btn btn--danger', disabled: !asc.canDepose, onClick: act(() => asc.deposeAmyrlin()) }, 'Call the Hall to depose the Amyrlin (1 action)')));
+    }
+
+    if (office === 'sitter' || office === 'amyrlin') {
+      const treasury = h('section', { class: 'panel' }, h('h3', { text: `Tower gold: ${pol.gold}` }),
+        h('p', { class: 'muted', text: `+${asc.weeklyGold()} every week. Fund projects that serve you.` }));
+      for (const pr of asc.projectsFor()) {
+        treasury.append(h('div', { class: 'option-row' },
+          h('div', {}, h('strong', { text: `${pr.name} (${pr.cost})` }), h('p', { class: 'muted', text: pr.count && !pr.repeatable ? `${pr.description} Funded.` : pr.description })),
+          h('button', { type: 'button', class: 'btn btn--small', disabled: pr.maxed || !pr.affordable, onClick: () => { asc.fund(pr.id); this.renderHub(); } }, pr.maxed ? 'Done' : 'Fund')));
+      }
+      panels.push(treasury);
+    }
+
+    if (office === 'amyrlin') {
+      const used = asc.forcesDeployed();
+      const avail = asc.forcesAvailable();
+      const study = h('section', { class: 'panel panel--wide' }, h('h3', { text: `The Amyrlin's study: forces deployed ${used} of ${avail}` }),
+        h('p', { class: 'muted', text: `Each force lowers a nation's threat by 18 every week. Threats rise every week, fastest in the Borderlands. At 80 a nation falls into crisis: its regard and the Tower's stability suffer. The gravest crisis also appears on your assignment board.` }));
+      const table = h('div', { class: 'threat-grid' });
+      for (const id of Object.keys(NATIONS).sort((a, b) => (pol.threats[b] ?? 0) - (pol.threats[a] ?? 0))) {
+        const threat = pol.threats[id] ?? 0;
+        const n = pol.forces[id] ?? 0;
+        table.append(h('div', { class: 'threat-row' },
+          h('span', { text: NATIONS[id].name }),
+          h('div', { class: `meter meter--${threat >= 60 ? 'critical' : threat >= 40 ? 'warn' : 'good'}`, style: { '--fill': (threat / 100).toFixed(3) } }, h('div', { class: 'meter__fill' })),
+          h('span', { class: 'meter-row__value', text: `${threat}` }),
+          h('button', { type: 'button', class: 'btn btn--small', 'aria-label': `Withdraw a force from ${NATIONS[id].name}`, disabled: n <= 0, onClick: () => { asc.deploy(id, -1); g.save(); this.renderHub(); } }, '−'),
+          h('span', { class: 'meter-row__value', text: String(n) }),
+          h('button', { type: 'button', class: 'btn btn--small', 'aria-label': `Send a force to ${NATIONS[id].name}`, disabled: used >= avail, onClick: () => { asc.deploy(id, 1); g.save(); this.renderHub(); } }, '+')));
+      }
+      study.append(table);
+      panels.push(study);
+    }
+    return panels;
   }
 
   hubInitiate() {

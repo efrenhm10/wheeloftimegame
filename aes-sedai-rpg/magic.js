@@ -412,8 +412,11 @@ export class Weaver {
   identify(threads) {
     if (!threads.length) return null;
     const key = recipeKey(threads);
-    const mastery = this.player.ajahDef?.mastery;
-    if (mastery && mastery.recipe === key) return WEAVES[mastery.weave];
+    const p = this.player;
+    // The Amyrlin is of all Ajahs: every Mastery Weave answers her.
+    const masteries = p.flags.amyrlin ? Object.values(AJAHS).map((a) => a.mastery) : [p.ajahDef?.mastery].filter(Boolean);
+    const mastery = masteries.find((m) => m.recipe === key);
+    if (mastery) return WEAVES[mastery.weave];
     return BASE_BY_RECIPE.get(key) ?? null;
   }
 
@@ -432,7 +435,7 @@ export class Weaver {
     const p = this.player;
     if (!p.knows(weave.id)) return { status: 'unknown', reason: 'You have not been taught this weave.' };
     if (weave.requires?.oaths && !p.oathsSworn) return { status: 'locked', reason: 'Sealed until you swear the Three Oaths.' };
-    if (weave.requires?.ajah && p.ajah !== weave.requires.ajah) {
+    if (weave.requires?.ajah && p.ajah !== weave.requires.ajah && !p.flags.amyrlin) {
       return { status: 'locked', reason: `Mastery of the ${AJAHS[weave.requires.ajah].name} Ajah.` };
     }
     if (weave.tier >= 3 && !weave.mastery && p.stats.strength < weave.minStrength) {

@@ -87,6 +87,16 @@ export const ENEMY_TYPES = {
     aggroRange: 460, shape: 'channeler', color: '#101010', accent: '#e04040', stunResist: 0.35,
     ranged: { damage: 18, speed: 340, cooldown: 1.7, range: 400, windup: 0.4, color: '#ff4d4d', keepAway: 220, bind: 1.1 },
   },
+  bandit: {
+    name: 'Bandit', faction: 'human', human: true, capturable: true, hp: 38, speed: 98, radius: 11, damage: 9,
+    attackRange: 14, attackCooldown: 1.0, windup: 0.28, xp: 11, aggroRange: 320,
+    shape: 'human', color: '#5a4630', accent: '#9a8a6a',
+  },
+  whitecloak: {
+    name: 'Child of the Light', faction: 'human', human: true, capturable: true, hp: 50, speed: 96, radius: 12,
+    damage: 12, attackRange: 18, attackCooldown: 1.05, windup: 0.3, xp: 16, aggroRange: 340,
+    shape: 'human', color: '#f0ece0', accent: '#d4a62a',
+  },
   tower_guard: {
     name: 'Tower Guard', faction: 'human', human: true, capturable: true, hp: 48, speed: 100, radius: 12,
     damage: 11, attackRange: 18, attackCooldown: 1.0, windup: 0.3, xp: 14, aggroRange: 360,
@@ -105,6 +115,7 @@ export const ENEMY_TYPES = {
     ranged: { damage: 19, speed: 360, cooldown: 1.35, range: 440, windup: 0.35, color: '#a08040', keepAway: 200, volley: 3 },
     surge: { interval: 7, radius: 125, damage: 24, windup: 0.9 },
     shieldBreak: 6,
+    threatensLife: true,
   },
 };
 
@@ -361,7 +372,8 @@ export class Enemy {
 
   get canBeCaptured() {
     if (!this.def.capturable || this.dead) return false;
-    if (this.type === 'rogue_channeler') return this.shielded > 0;
+    // A man holding saidin can only be seized once shielded, or once worn down and pinned.
+    if (this.type === 'rogue_channeler') return this.shielded > 0 || (this.hp < this.maxHp * 0.3 && (this.stun > 0 || this.root > 0));
     return this.stun > 0 || this.root > 0 || this.pacify > 0 || this.shielded > 0;
   }
 
@@ -383,7 +395,8 @@ export class Enemy {
     if (this.requiredElement || this.requiredRecipe) return this.resolveWardHit(hit);
 
     let damage = amount;
-    const oathBlocks = amount > 0 && this.def.human && hit.source === 'player' && this.game.player.oathBlocksHarm();
+    // The Third Oath yields to the last extreme: a man channeling saidin at you threatens your life.
+    const oathBlocks = amount > 0 && this.def.human && !this.def.threatensLife && hit.source === 'player' && this.game.player.oathBlocksHarm();
     if (oathBlocks) {
       damage = 0;
       if (this.oathNotice <= 0) {
