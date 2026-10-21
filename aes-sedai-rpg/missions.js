@@ -5,6 +5,7 @@ import { clamp, dist, RNG } from './util.js';
 import { T, TILE, TileMap } from './world.js';
 import { AJAHS, Player, RANKS, SCARS } from './player.js';
 import { ELEMENTS, TER_ANGREAL, WEAVES } from './magic.js';
+import { POLITICS_MISSIONS } from './towerPolitics.js';
 
 const at = (c, r) => ({ x: c * TILE + TILE / 2, y: r * TILE + TILE / 2 });
 const rankIndexOf = (id) => RANKS.findIndex((r) => r.id === id);
@@ -168,8 +169,9 @@ export class MissionRun {
     this.onTimeout = onTimeout;
   }
 
-  addRenderer(fn) {
-    this.renderers.push(fn);
+  /** Extra drawing for a mission. Underlays (tints, fires) draw before zones and pickups. */
+  addRenderer(fn, { under = false } = {}) {
+    this.renderers.push({ fn, under });
   }
 
   // -- world helpers -----------------------------------------------------------
@@ -330,8 +332,20 @@ export class MissionRun {
     this.emit('update', dt);
   }
 
+  runRenderers(ctx, time, under) {
+    for (const r of this.renderers) {
+      if (r.under !== under) continue;
+      try {
+        r.fn(ctx, time);
+      } catch (err) {
+        console.error('[mission] renderer failed', err);
+      }
+    }
+  }
+
   render(ctx, time) {
     const p = this.player;
+    this.runRenderers(ctx, time, true);
     for (const z of this.zones) {
       if (!z.visible || !z.active || (z.once && z.triggered)) continue;
       ctx.save();
@@ -414,13 +428,7 @@ export class MissionRun {
       ctx.stroke();
       ctx.restore();
     }
-    for (const fn of this.renderers) {
-      try {
-        fn(ctx, time);
-      } catch (err) {
-        console.error('[mission] renderer failed', err);
-      }
-    }
+    this.runRenderers(ctx, time, false);
   }
 }
 
@@ -706,6 +714,7 @@ export const MISSIONS = [
     chapter: 'Novice',
     summary: 'Your first day in the White Tower. Something is wrong beyond the garden wall.',
     retryable: false,
+    free: true,
     requires: { minRank: 'novice', maxRank: 'novice' },
     rewards: { xp: 120, prestige: 15 },
     failure: {
@@ -951,7 +960,7 @@ export const MISSIONS = [
     chapter: 'Novice',
     summary: 'The test for Accepted. Three times you enter, three times you must return.',
     retryable: true,
-    requires: { minRank: 'novice', maxRank: 'novice', success: ['lessons_flows'], level: 3, prestige: 30 },
+    requires: { minRank: 'novice', maxRank: 'novice', success: ['lessons_flows'], level: 3, prestige: 25 },
     rewards: { xp: 150, prestige: 25, stats: { potential: 1 }, learn: ['earth_eruption', 'bonds_of_air', 'ice_lances'] },
     failure: {
       prestige: -15,
@@ -1926,6 +1935,8 @@ export const MISSIONS = [
   },
 ];
 
+MISSIONS.push(...POLITICS_MISSIONS);
+
 export const MISSION_BY_ID = Object.fromEntries(MISSIONS.map((m) => [m.id, m]));
 
 // ---------------------------------------------------------------------------
@@ -1965,7 +1976,9 @@ export class MissionEngine {
   /** Returns { def, state: 'available'|'locked'|'completed'|'closed', reason, outcome } for each visible mission. */
   catalog() {
     const p = this.game.player;
-    return MISSIONS.filter((def) => !def.requires.ajah || def.requires.ajah === p.ajah).map((def) => ({ def, ...this.availability(def) }));
+    return MISSIONS.filter((def) => !def.requires.ajah || def.requires.ajah === p.ajah)
+      .map((def) => ({ def, ...this.availability(def) }))
+      .filter((entry) => !(entry.def.hideWhenLocked && entry.state !== 'available' && !entry.timeLocked && entry.state !== 'completed'));
   }
 
   availability(def) {
@@ -1988,7 +2001,25 @@ export class MissionEngine {
     }
     if (req.level && p.level < req.level) return { state: 'locked', outcome, reason: `Requires level ${req.level} (you are ${p.level})` };
     if (req.prestige && p.prestige < req.prestige) return { state: 'locked', outcome, reason: `Requires ${req.prestige} prestige (you have ${p.prestige})` };
+    const custom = req.custom?.(this.game);
+    if (custom) return { state: 'locked', outcome, reason: custom };
+    const pol = this.game.politics.pol;
+    if (pol.coup?.pending && def.id !== 'tower_coup') return { state: 'locked', outcome, reason: 'The Tower is in chaos' };
+    if (!def.free && pol.actions <= 0) {
+      return { state: 'locked', outcome, reason: pol.penance > 0 ? 'You are serving a punishment detail this week' : 'No time left this week. End the week to continue.', timeLocked: true };
+    }
     return { state: 'available', outcome, reason: '' };
+  }
+
+  /** Every requirement of a mission, with whether it is met, for the promotion checklist. */
+  requirementChecklist(def) {
+    const p = this.game.player;
+    const req = def.requires ?? {};
+    const items = [];
+    for (const id of req.success ?? []) items.push({ label: `Succeed in ${MISSION_BY_ID[id].title}`, met: p.outcomes[id] === 'success' });
+    if (req.level) items.push({ label: `Reach level ${req.level} (now ${p.level}, ${p.xp}/${p.xpToNext} XP)`, met: p.level >= req.level });
+    if (req.prestige) items.push({ label: `Earn ${req.prestige} prestige (now ${p.prestige})`, met: p.prestige >= req.prestige });
+    return items;
   }
 
   /** The trial that leads to the next rank, and what still stands in the way. */
@@ -1996,7 +2027,7 @@ export class MissionEngine {
     const p = this.game.player;
     const trial = p.rankIndex === 0 ? MISSION_BY_ID.test_arches : p.rankIndex === 1 ? MISSION_BY_ID.test_shawl : null;
     if (!trial) return null;
-    return { trial, ...this.availability(trial), next: RANKS[p.rankIndex + 1] };
+    return { trial, ...this.availability(trial), next: RANKS[p.rankIndex + 1], checklist: this.requirementChecklist(trial) };
   }
 
   rewardsPreview(def) {
@@ -2037,6 +2068,7 @@ export class MissionEngine {
       this.game.enterHub();
       return false;
     }
+    if (!def.free) this.game.politics.spendAction();
     this.game.markMissionStarted(def.id);
     this.game.enterMission();
     return true;
@@ -2212,7 +2244,7 @@ export class MissionEngine {
     game.freezeMission();
     try {
       if (success) await this.applySuccess(run);
-      else await this.applyFailure(run.def, reason);
+      else await this.applyFailure(run.def, reason, false, run);
     } catch (err) {
       console.error('[missions] resolution failed', err);
       game.ui.reportError('Something went wrong closing the mission; your progress was kept.');
@@ -2240,7 +2272,7 @@ export class MissionEngine {
       }
     }
     if (def.debrief) await def.debrief(run, ctx);
-    if (game.pendingEnding) return;
+    if (game.pendingEnding || def.quiet) return;
     const { gained, levels } = p.gainXP(r.xp);
     p.prestige += r.prestige + bonus;
     p.adjustStats(r.stats);
@@ -2258,9 +2290,10 @@ export class MissionEngine {
     await game.dialogue([{ speaker: 'Mission Complete', tone: 'success', text: `${def.title}\n\n${lines.join('\n')}` }]);
   }
 
-  async applyFailure(def, reason, fromAbandon = false) {
+  async applyFailure(def, reason, fromAbandon = false, run = null) {
     const game = this.game;
     const p = game.player;
+    if (def.safe) return;
     if (p.outcomes[def.id] !== 'success') p.outcomes[def.id] = 'failed';
     const f = def.failure;
     const lines = [];
@@ -2281,6 +2314,7 @@ export class MissionEngine {
       { speaker: 'Mission Failed', tone: 'danger', text: narrative },
       { speaker: 'Consequences', tone: 'danger', text: lines.join('\n') },
     ]);
-    if (p.expelled) game.pendingEnding = 'expelled';
+    def.onFailure?.(run, game);
+    if (p.expelled && !game.pendingEnding) game.pendingEnding = 'expelled';
   }
 }

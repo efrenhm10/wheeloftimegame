@@ -5,6 +5,7 @@ import { TILE, T } from './world.js';
 import { AFFINITIES, AJAHS, AJAH_ORDER, Player, STAT_IDS, STAT_INFO } from './player.js';
 import { ELEMENTS, ELEMENT_BY_ID, TER_ANGREAL, WEAVES, dangerState, weaveTierLabel } from './magic.js';
 import { WARDER_COMMANDS } from './allies.js';
+import { ACTIONS_PER_WEEK } from './towerPolitics.js';
 
 const $ = (id) => {
   const el = document.getElementById(id);
@@ -53,7 +54,12 @@ const ENDINGS = {
     title: 'Oathless',
     text: 'You would not take the Oaths. The Tower cannot hold a woman of your strength unbound. You are put out at dawn, and the sisters watch you from the walls until you are out of sight.',
   },
+  traitor: {
+    title: 'Stilled for Treason',
+    text: 'The coup failed. The Hall tried you in a single afternoon, and by evening you were stilled before the assembled Ajahs. Your name is struck from the Tower\'s rolls, and your conspirators will not say it aloud.',
+  },
 };
+const TOWER_MISSIONS = new Set(['tower_halls', 'covert_bribe', 'covert_wards', 'covert_forgery', 'loyal_shadow', 'tower_coup']);
 
 export class UI {
   constructor(game) {
@@ -344,6 +350,8 @@ export class UI {
     if (p.stun > 0) chips.push(['danger', 'Stunned']);
     if (p.root > 0) chips.push(['danger', 'Bound']);
     if (p.oathsSworn) chips.push(['oath', p.oathBlocksHarm() ? 'Third Oath: humans protected' : 'Last extreme: Oath released']);
+    const runId = this.game.missions.run?.def.id;
+    if (TOWER_MISSIONS.has(runId) && p.politics && p.rankIndex === 2) chips.push(['danger', `Tower Stability ${Math.round(p.politics.stability)}`]);
     if (p.ajah === 'green') {
       const alive = this.game.allies.activeWarders.length;
       chips.push(['ally', `Warders ${alive} · ${WARDER_COMMANDS[this.game.allies.command].label}`]);
@@ -714,8 +722,9 @@ export class UI {
         h('p', {}, h('span', { text: 'Tower\'s patience ' }), h('span', { class: 'pips pips--strikes', text: `${'●'.repeat(p.strikes)}${'○'.repeat(Math.max(0, Player.MAX_STRIKES - p.strikes))}` })),
         h('p', {}, h('span', { text: 'Saidar burns ' }), h('span', { class: 'pips pips--burnouts', text: `${'●'.repeat(p.burnouts)}${'○'.repeat(Math.max(0, Player.MAX_BURNOUTS - p.burnouts))}` })),
         h('button', { type: 'button', class: 'btn btn--ghost', 'data-action': 'help', onClick: () => { this.returnScreen = 'hub'; this.showScreen('help'); } }, 'How to play')),
+      this.weekBar(),
     );
-    const tabs = [['missions', 'Missions'], ['initiate', p.statPoints ? `Initiate (${p.statPoints})` : 'Initiate'], ['weaves', 'Weaves'], ['chronicle', 'Chronicle']];
+    const tabs = [['missions', 'Missions'], ['tower', p.politics?.pending.length ? `Tower (${p.politics.pending.length})` : 'Tower'], ['initiate', p.statPoints ? `Initiate (${p.statPoints})` : 'Initiate'], ['weaves', 'Weaves'], ['chronicle', 'Chronicle']];
     if (p.canUseArtifacts) tabs.splice(3, 0, ['artifacts', 'Ter\'angreal']);
     if (!tabs.some(([id]) => id === this.hubTab)) this.hubTab = 'missions';
     this.el.hubTabs.replaceChildren(
@@ -731,7 +740,7 @@ export class UI {
           },
         }, label)),
     );
-    const body = { missions: () => this.hubMissions(), initiate: () => this.hubInitiate(), weaves: () => this.hubWeaves(), artifacts: () => this.hubArtifacts(), chronicle: () => this.hubChronicle() }[this.hubTab]();
+    const body = { missions: () => this.hubMissions(), tower: () => this.hubTower(), initiate: () => this.hubInitiate(), weaves: () => this.hubWeaves(), artifacts: () => this.hubArtifacts(), chronicle: () => this.hubChronicle() }[this.hubTab]();
     this.el.hubBody.replaceChildren(body);
   }
 
@@ -743,19 +752,21 @@ export class UI {
       wrap.append(
         h('section', { class: 'promotion' },
           h('h3', { text: `Path to ${promo.next.title}` }),
-          h('p', { text: `${promo.trial.title}: ${promo.state === 'available' ? 'the trial awaits you.' : promo.reason}` }),
-          h('p', { class: 'muted', text: promo.next.description })),
+          h('p', { text: `${promo.trial.title}: ${promo.state === 'available' ? 'the trial awaits you.' : 'what still stands in your way:'}` }),
+          h('ul', { class: 'checklist' }, promo.checklist.map((item) => h('li', { class: item.met ? 'checklist__item--met' : 'checklist__item--open' }, h('span', { 'aria-hidden': 'true', text: item.met ? '✓ ' : '○ ' }), item.label))),
+          h('p', { class: 'muted', text: 'Every week you end grants XP and prestige from your studies. Patrols and the Tower Halls fill in the rest.' })),
       );
     } else if (g.player.ajahDef) {
       const a = g.player.ajahDef;
       wrap.append(h('section', { class: 'promotion', style: { '--accent': a.color } }, h('h3', { text: `${a.name} Ajah: ${a.archetype}` }), h('p', { text: a.passive.description })));
     }
-    const groups = new Map();
+    const groups = new Map([['The White Tower', []]]);
     for (const entry of g.missions.catalog()) {
       if (!groups.has(entry.def.chapter)) groups.set(entry.def.chapter, []);
       groups.get(entry.def.chapter).push(entry);
     }
     for (const [chapter, entries] of groups) {
+      if (!entries.length) continue;
       wrap.append(h('h3', { class: 'chapter', text: chapter === 'Any' ? 'Standing Duties' : chapter }));
       const list = h('div', { class: 'mission-list' });
       for (const { def, state, reason, outcome } of entries) {
@@ -766,7 +777,7 @@ export class UI {
               h('h4', { text: def.title }),
               h('span', { class: `tag tag--${def.type}`, text: TYPE_LABELS[def.type] ?? def.type })),
             h('p', { text: def.summary }),
-            h('p', { class: 'mission-card__rewards', text: g.missions.rewardsPreview(def) }),
+            h('p', { class: 'mission-card__rewards', text: `${def.free ? 'No action needed' : '1 action'} · ${def.quiet ? 'Tower politics' : g.missions.rewardsPreview(def)}` }),
             h('p', { class: 'mission-card__state', text: state === 'available' ? (outcome === 'failed' ? 'Failed before. You may try again.' : def.repeatable && count ? `Completed ${count} time${count > 1 ? 's' : ''}` : 'Available') : reason }),
             state === 'available'
               ? h('button', { type: 'button', class: 'btn btn--primary', onClick: () => g.startMission(def.id) }, def.type === 'trial' ? 'Face the trial' : 'Undertake')
@@ -775,6 +786,97 @@ export class UI {
       }
       wrap.append(list);
     }
+    return wrap;
+  }
+
+  setAbandonLabel(safe) {
+    $('btn-abandon').textContent = safe ? 'Leave the halls' : 'Abandon mission (counts as failure)';
+  }
+
+  weekBar() {
+    const g = this.game;
+    const pol = g.player.politics;
+    if (!pol) return null;
+    const pips = `${'●'.repeat(pol.actions)}${'○'.repeat(Math.max(0, ACTIONS_PER_WEEK - pol.actions))}`;
+    const waiting = pol.pending.length;
+    return h('div', { class: 'week-bar' },
+      h('span', { class: 'week-bar__week', text: `Week ${pol.week}` }),
+      h('span', { class: 'week-bar__actions', title: 'Each mission (other than the Tower Halls) uses one action' }, 'Actions ', h('span', { class: 'pips', text: pips })),
+      pol.penance > 0 ? h('span', { class: 'chip chip--danger', text: 'Punishment detail' }) : null,
+      waiting ? h('span', { class: 'chip chip--artifact', text: `${waiting} sister${waiting > 1 ? 's' : ''} seek${waiting > 1 ? '' : 's'} a word in the halls` }) : null,
+      h('button', { type: 'button', class: 'btn btn--primary btn--small', onClick: () => g.endWeek() }, 'End the week'));
+  }
+
+  hubTower() {
+    const g = this.game;
+    const p = g.player;
+    const tp = g.politics;
+    const pol = tp.pol;
+    const wrap = h('div', { class: 'hub-initiate' });
+    const meter = (label, value, max, tone, note, accent) =>
+      h('div', { class: 'meter-row' },
+        h('div', { class: 'meter-row__head' }, h('span', { text: label }), h('span', { class: 'meter-row__value', text: `${Math.round(value)} / ${max}` })),
+        h('div', { class: `meter meter--${tone}`, style: { '--fill': clamp(value / max, 0, 1).toFixed(3), ...(accent ? { '--accent': accent } : {}) } }, h('div', { class: 'meter__fill' })),
+        note ? h('p', { class: 'muted', text: note }) : null);
+
+    wrap.append(h('section', { class: 'panel' },
+      h('h3', { text: 'The state of the Tower' }),
+      meter('Tower Stability', pol.stability, 100, pol.stability < 25 ? 'critical' : pol.stability < 50 ? 'warn' : 'good', pol.conspiracy?.active ? 'A conspiracy erodes it every week. At zero, the Tower breaks and the coup begins.' : 'Calm, for now.'),
+      meter('Your Tower Conflict', pol.conflict, 100, pol.conflict > 70 ? 'critical' : 'warn', 'Defying sisters who outrank you raises it. At 100 you are given a punishment detail.'),
+      p.rankIndex === 2 && p.ajahDef ? meter(`Standing with the ${p.ajahDef.name} Ajah`, pol.standing, 100, 'ajah', 'Accepting rival favours lowers it; serving your Ajah raises it.', p.ajahDef.color) : null,
+      pol.faction === 'double' ? meter('Conspirators\' suspicion', pol.suspicion, 100, 'critical', 'Too high, and they will test your loyalty.') : null,
+      h('div', { class: 'row-actions' },
+        h('button', { type: 'button', class: 'btn btn--primary', onClick: () => g.startMission('tower_halls'), disabled: pol.coup?.pending }, 'Walk the Tower halls'),
+        tp.canPresentEvidence ? h('button', { type: 'button', class: 'btn btn--danger', onClick: () => g.presentEvidence() }, 'Present evidence to the Amyrlin') : null)));
+
+    const order = AJAH_ORDER.slice().sort((a, b) => pol.influence[b] - pol.influence[a]);
+    wrap.append(h('section', { class: 'panel' },
+      h('h3', { text: 'Ajah influence in the Hall' }),
+      ...order.map((a) => h('div', { class: 'influence-row' },
+        h('span', { text: `${AJAHS[a].name}${a === p.ajah ? ' (yours)' : ''}${a === pol.conspiracy?.ajah && pol.conspiracy.active ? ' ⚑' : ''}` }),
+        h('div', { class: 'meter meter--ajah', style: { '--fill': (pol.influence[a] / 100).toFixed(3), '--accent': AJAHS[a].color } }, h('div', { class: 'meter__fill' })),
+        h('span', { class: 'meter-row__value', text: String(pol.influence[a]) })))));
+
+    const cons = h('section', { class: 'panel' }, h('h3', { text: 'The conspiracy' }));
+    const leader = tp.sisterById(pol.conspiracy?.leaderId);
+    const lines = [];
+    if (p.rankIndex < 2) lines.push('The Hall\'s factions take no notice of novices and Accepted. That changes the day you take the shawl.');
+    else if (p.flags.amyrlin) lines.push('You hold the stole. Every sister in the Tower must defer to you, and every one of them is watching for the first crack.');
+    else if (pol.coup?.done && !pol.conspiracy?.active) lines.push(`The coup is over. ${tp.label(tp.sisterById(pol.amyrlinId))} holds the stole.`);
+    else if (!pol.conspiracy) lines.push('No conspiracy stirs that you know of. Give it time; there is always one.');
+    else if (pol.conspiracy.crushed) lines.push('The last conspiracy was crushed. Its leaders are confined to their rooms.');
+    else if (!pol.conspiracy.approached) lines.push(`Rumours say the ${AJAHS[pol.conspiracy.ajah].name} Ajah is gathering Sitters. Someone will approach you soon.`);
+    else if (pol.faction === 'conspirator') lines.push(`You are sworn to ${leader?.name}'s conspiracy. Covert missions drive Stability down; when it reaches zero, the coup begins. If the coup fails, you will be stilled.`);
+    else if (pol.faction === 'double') lines.push(`You are a double agent inside ${leader?.name}'s conspiracy. In each covert mission you may fake the act and keep evidence instead.`);
+    else lines.push(`You refused ${leader?.name}. Gather leverage by shadowing the conspirators before Stability collapses.`);
+    if (pol.conspiracy?.active && pol.conspiracy.approached && pol.faction !== 'conspirator') lines.push(`Leverage gathered: ${pol.leverage} of 3 needed to bring her before the Amyrlin.`);
+    for (const line of lines) cons.append(h('p', { text: line }));
+    wrap.append(cons);
+
+    const table = h('table', { class: 'roster' },
+      h('thead', {}, h('tr', {}, ...['Sister', 'Ajah', 'Strength', 'Precedence', 'Regard'].map((t) => h('th', { text: t })))),
+      h('tbody', {}, pol.sisters.filter((s) => s.status === 'active').sort((a, b) => b.strength - a.strength).map((s) => {
+        const rel = tp.compare(s);
+        return h('tr', {},
+          h('td', { text: s.role === 'amyrlin' ? `${s.name} (Amyrlin)` : s.role === 'head' ? `${s.name} (head)` : s.name }),
+          h('td', {}, h('span', { class: 'ajah-dot', style: { '--accent': AJAHS[s.ajah].color } }), AJAHS[s.ajah].name),
+          h('td', { class: 'num', text: String(s.strength) }),
+          h('td', { class: `rel rel--${rel}`, text: rel === 'above' ? 'Defers to you' : rel === 'below' ? 'You defer' : 'Equals' }),
+          h('td', { class: 'num', text: s.disposition >= 65 ? 'Warm' : s.disposition <= 35 ? 'Cold' : 'Neutral' }));
+      })));
+    wrap.append(h('section', { class: 'panel panel--wide' }, h('h3', { text: `Notable sisters · your Strength ${p.stats.strength}` }), h('div', { class: 'table-scroll' }, table)));
+
+    if (p.rankIndex === 2) {
+      wrap.append(h('section', { class: 'panel' },
+        h('h3', { text: 'Novices in the garden' }),
+        h('ul', {}, pol.novices.map((n) => h('li', { text: `${n.name}: ${n.talent}, potential ${n.potential}${n.sponsor ? ` · sponsored by the ${AJAHS[n.sponsor].name}` : ''}` }))),
+        h('p', { class: 'muted', text: 'Sponsor one novice a week in the Tower Halls garden to grow your Ajah\'s influence.' })));
+    }
+    const log = h('section', { class: 'panel' }, h('h3', { text: 'Corridor whispers' }));
+    const recent = pol.log.slice(-10).reverse();
+    if (!recent.length) log.append(h('p', { class: 'muted', text: 'Nothing yet. Walk the halls, or end the week.' }));
+    for (const entry of recent) log.append(h('p', { class: `log-entry log-entry--${entry.tone}` }, h('span', { class: 'muted', text: `Week ${entry.week}: ` }), entry.text));
+    wrap.append(log);
     return wrap;
   }
 

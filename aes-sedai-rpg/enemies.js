@@ -87,6 +87,17 @@ export const ENEMY_TYPES = {
     aggroRange: 460, shape: 'channeler', color: '#101010', accent: '#e04040', stunResist: 0.35,
     ranged: { damage: 18, speed: 340, cooldown: 1.7, range: 400, windup: 0.4, color: '#ff4d4d', keepAway: 220, bind: 1.1 },
   },
+  tower_guard: {
+    name: 'Tower Guard', faction: 'human', human: true, capturable: true, hp: 48, speed: 100, radius: 12,
+    damage: 11, attackRange: 18, attackCooldown: 1.0, windup: 0.3, xp: 14, aggroRange: 360,
+    shape: 'human', color: '#d8d4cc', accent: '#c9a64a',
+  },
+  rebel_sister: {
+    name: 'Aes Sedai', faction: 'human', human: true, capturable: true, severable: true,
+    hp: 80, speed: 88, radius: 12, damage: 8, attackRange: 14, attackCooldown: 1.1, windup: 0.3, xp: 34,
+    aggroRange: 460, shape: 'channeler', color: '#e6e1d6', accent: '#9ad9ea', stunResist: 0.2,
+    ranged: { damage: 14, speed: 330, cooldown: 2.0, range: 380, windup: 0.4, color: '#bfe6ff', keepAway: 200, bind: 0.8 },
+  },
   rogue_channeler: {
     name: 'Rogue Channeler', faction: 'human', human: true, capturable: true, severable: true,
     hp: 420, speed: 96, radius: 15, damage: 14, attackRange: 18, attackCooldown: 1.0, windup: 0.3, xp: 160,

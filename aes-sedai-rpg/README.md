@@ -39,6 +39,7 @@ Then open <http://localhost:8000>. Any static server works, for example `npx htt
 | `allies.js` | Green Ajah Warders (aggro-drawing companions), wounded civilians and defendable structures |
 | `missions.js` | Mission engine (`MissionEngine` / `MissionRun`), map builders, every mission, parley and the Ajah / Three Oaths ceremony |
 | `ui.js` | HUD updates, minimap with fog of war, dialogue queue, hub tabs, Ajah selection cards, toasts and rate-limited error notices |
+| `towerPolitics.js` | Weekly calendar, the strength hierarchy, Ajah influence, novice sponsorship, Tower Conflict, the conspiracy events, covert missions, the walkable Tower Halls and the Tower Coup |
 | `world.js` | Tile maps, collision, line of sight, secret walls, fog of war, particle and screen-shake effects |
 | `util.js` | Math helpers, seeded RNG, event bus, safe `localStorage` wrapper |
 
@@ -50,6 +51,20 @@ Then open <http://localhost:8000>. Any static server works, for example `npx htt
 4. **Aes Sedai.** Each Ajah gets its own mid-game mission, followed by *The Eyeless Hunt* finale. *Patrol the Tower Grounds* is repeatable at every rank.
 
 Advanced weaves (Sky Lightning, Earthquake, Delving, Gateway, Balefire) stay sealed until you have sworn the Oaths and reached the required Strength. After you swear, the Third Oath takes effect in play: your weaves cannot harm humans unless you are below 40% health. You bind, shield or pacify them and seize them by touch instead.
+
+## Weeks and Tower politics
+
+Time passes in **weeks**. Each week gives you **2 actions**; every mission except the Tower Halls (and the opening breach) uses one. **End the week** in the hub to collect your studies (XP and prestige by rank), resolve any sister who is still waiting for you, and start the next week. The hub's *Path to…* panel lists every requirement for your next trial, met or not.
+
+- **Strength hierarchy.** Among Aes Sedai, the stronger sister speaks first. Sisters at least 2 Strength below you must defer to you in dialogue. Sisters at least 2 above you restrict your options, and pushing back raises **Tower Conflict**. Novices and Accepted defer to everyone. At 100 Conflict you serve a **punishment detail**: no actions next week and −10 prestige.
+- **The Tower Halls** is a walkable map of the Hall of the Tower, the Keeper's archive, the Sitters' chambers, the seven Ajah quarters and the novice garden. Sisters with business walk up to you (marked `!`), Ajah heads hold court, and as a full sister you can **sponsor a novice** each week to grow your Ajah's influence. Sponsoring can start a rivalry with a sister who wanted the same pupil.
+- **Ajah influence and standing.** Every Ajah has an influence rating in the Hall, and you have a standing with your own Ajah's head. Rival sisters offer intelligence that helps you but lowers your standing.
+- **The conspiracy.** Two weeks after you take the shawl, the strongest rival Ajah's head approaches you to depose the Amyrlin. She offers a bribe (prestige plus a ter'angreal) or her Ajah's exclusive weave *Mirror of Mists* (Fire + Air + Spirit), or she blackmails you with your past (a balefire folio, burnouts, strikes). You can:
+  - **join** her: covert missions *Silver for the Sitters*, *Darkened Wards* and *The Forged Hand* drive **Tower Stability** down;
+  - **pretend to join** as a double agent: in each covert mission you may fake the act and keep evidence instead, but rising suspicion brings loyalty tests;
+  - **refuse** and stay loyal: shadow conspirators in *Shadows in the Corridors* to gather leverage.
+  With 3 leverage you can present evidence to the Amyrlin and crush the plot.
+- **The Tower Coup.** The conspiracy erodes Stability every week. At 0 the coup begins at once, on a barricaded, burning version of the Tower map. You fight through the corridors and break a hollow wall into the Hall, choose a side at the last moment, and subdue the opposing champion. The Oaths still bind you, so you must bind and seize human foes. Then you decide who holds the stole: the old Amyrlin, the rebel leader, or yourself, if your Strength and prestige can carry the Hall. A conspirator who falls in the coup is tried and **stilled**.
 
 ## Ajah class templates
 

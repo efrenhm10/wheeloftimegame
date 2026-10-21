@@ -8,6 +8,7 @@ import { EnemyManager } from './enemies.js';
 import { AllyManager } from './allies.js';
 import { MissionEngine, MISSION_BY_ID } from './missions.js';
 import { UI } from './ui.js';
+import { SisterManager, TowerPolitics, normalizePolitics } from './towerPolitics.js';
 
 const SAVE_KEY = 'wot-aes-sedai:save:v1';
 const SAVE_VERSION = 1;
@@ -56,7 +57,11 @@ class Game {
     this.allies = new AllyManager(this);
     this.weaver = new Weaver(this);
     this.missions = new MissionEngine(this);
+    this.politics = new TowerPolitics(this);
+    this.npcs = new SisterManager(this);
     this.ui = new UI(this);
+    this.weekBusy = false;
+    this.events.on('enemyKilled', (enemy, info) => this.awardKill(enemy, info));
     this.state = 'title';
     this.time = 0;
     this.camera = { x: 0, y: 0, zoom: 1, viewW: 0, viewH: 0 };
@@ -213,6 +218,8 @@ class Game {
       return;
     }
     this.player.addChronicle('Arrived at the White Tower as a Novice.', 'ceremony');
+    this.player.politics = normalizePolitics(null);
+    this.politics.generateWeek();
     this.pendingEnding = null;
     this.save();
     this.updateCameraZoom();
@@ -234,10 +241,12 @@ class Game {
       this.returnToTitle();
       return;
     }
+    this.player.politics = normalizePolitics(this.player.politics);
+    if (!this.player.politics.pending.length && this.player.politics.week === 1) this.politics.generateWeek();
     this.pendingEnding = null;
     this.updateCameraZoom();
     const abandoned = data.inMission && MISSION_BY_ID[data.inMission];
-    if (abandoned) {
+    if (abandoned && !abandoned.safe) {
       this.ui.hideScreens();
       this.state = 'briefing';
       await this.missions.applyFailure(abandoned, 'abandoned', true);
@@ -247,6 +256,7 @@ class Game {
         return;
       }
     }
+    if (this.maybeStartCoup()) return;
     this.enterHub();
   }
 
@@ -261,6 +271,7 @@ class Game {
 
   async startMission(id) {
     this.ui.hideScreens();
+    this.ui.clearToasts();
     this.state = 'briefing';
     try {
       await this.missions.start(id);
@@ -295,13 +306,62 @@ class Game {
       return;
     }
     this.save();
+    if (this.maybeStartCoup()) return;
     this.enterHub();
+  }
+
+  /** When Tower Stability has collapsed, the coup begins at once. */
+  maybeStartCoup() {
+    if (!this.player || this.player.rankIndex < 2 || !this.player.politics?.coup?.pending) return false;
+    this.startMission('tower_coup');
+    return true;
+  }
+
+  async endWeek() {
+    if (this.state !== 'hub' || this.weekBusy || !this.player) return;
+    this.weekBusy = true;
+    this.ui.hideScreens();
+    this.state = 'briefing';
+    try {
+      const ending = this.player.politics.week;
+      const { lines, leftover } = this.politics.advanceWeek();
+      await this.dialogue([{ speaker: `Week ${ending} ends`, tone: 'narration', text: lines.join('\n') }]);
+      for (const entry of leftover) await this.politics.runEvent(entry, 'letter');
+      this.save();
+      if (this.maybeStartCoup()) return;
+    } catch (err) {
+      console.error('[game] week advance failed', err);
+      this.ui.reportError('The week could not be closed cleanly; your progress was kept.');
+    } finally {
+      this.weekBusy = false;
+    }
+    this.enterHub();
+  }
+
+  async presentEvidence() {
+    if (this.state !== 'hub') return;
+    this.ui.hideScreens();
+    this.state = 'briefing';
+    try {
+      await this.politics.presentEvidence();
+    } finally {
+      this.enterHub();
+    }
+  }
+
+  awardKill(enemy, info) {
+    const p = this.player;
+    if (!p || this.state !== 'mission' || !enemy.xp || info?.severed) return;
+    const { gained, levels } = p.gainXP(enemy.xp);
+    if (gained) this.effects.text(enemy.x, enemy.y - 32, `+${gained} XP`, '#b7a8ff', 11);
+    if (levels) this.ui.toast(`Level ${p.level}! Spend your stat points in the Tower.`, 'good');
   }
 
   pause() {
     if (this.state !== 'mission') return;
     this.state = 'paused';
     this.input.reset();
+    this.ui.setAbandonLabel(!!this.missions.run?.def.safe);
     this.ui.showScreen('pause');
   }
 
@@ -314,6 +374,11 @@ class Game {
   async abandonMission() {
     if (this.state !== 'paused' || !this.missions.active) return;
     this.ui.hideScreens();
+    if (this.missions.run.def.safe) {
+      this.state = 'mission';
+      this.missions.resolve(false, 'left');
+      return;
+    }
     const [confirm] = await this.dialogue([
       {
         speaker: 'Abandon the mission?',
@@ -361,6 +426,7 @@ class Game {
     this.map = built.map;
     this.enemies.clear();
     this.allies.clear();
+    this.npcs.clear();
     this.effects.clear();
     const p = this.player;
     if (keepVitals) {
@@ -537,6 +603,7 @@ class Game {
       this.weaver.update(dt);
       this.enemies.update(dt);
       this.allies.update(dt);
+      this.npcs.update(dt);
       this.missions.update(dt);
       this.exploreTimer -= dt;
       if (this.exploreTimer <= 0) {
@@ -586,6 +653,7 @@ class Game {
     this.weaver.renderUnder(ctx, time);
     this.enemies.render(ctx, time);
     this.allies.render(ctx, time);
+    this.npcs.render(ctx, time);
     this.player.render(ctx, time, this.weaver.threads.map((id) => ELEMENT_COLORS[id]));
     this.weaver.render(ctx, time);
     this.effects.render(ctx);

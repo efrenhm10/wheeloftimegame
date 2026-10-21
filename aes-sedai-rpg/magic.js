@@ -112,6 +112,12 @@ export const WEAVES = {
     validate: (w, c) => w.validateGateway(c, 380),
     cast: (w, c) => w.gateway(c),
   },
+  mirror_of_mists: {
+    name: 'Mirror of Mists', recipe: ['fire', 'air', 'spirit'], tier: 3, cost: 24, strain: 14, cooldown: 12, minStrength: 6,
+    requires: { oaths: true }, hidden: true,
+    description: 'A veil of bent light and Spirit, guarded by the conspiracy. Nearby foes lose sight of you for five seconds and guards forget their suspicion. Myrddraal see through it.',
+    cast: (w, c) => w.veil(c, { radius: 280, duration: 5 }),
+  },
   balefire: {
     name: 'Balefire', recipe: ['fire', 'fire', 'spirit'], tier: 3, cost: 45, strain: 45, cooldown: 4, minStrength: 11,
     requires: { oaths: true }, forbidden: true, hidden: true,
@@ -749,6 +755,19 @@ export class Weaver {
       this.game.effects.text(x, y - 20, 'A hidden passage!', '#b49bff', 13);
       this.game.events.emit('secretFound', found);
     }
+  }
+
+  veil(ctx, o) {
+    const p = this.player;
+    for (const e of this.game.enemies.inRadius(p.x, p.y, o.radius)) {
+      if (e.type === 'myrddraal' || e.boss) continue;
+      e.pacify = Math.max(e.pacify, o.duration);
+      e.aggroPlayer = false;
+      if (e.def.vision) e.suspicion = 0;
+    }
+    p.invuln = Math.max(p.invuln, 0.5);
+    this.game.effects.ring(p.x, p.y, o.radius, '#e7d2ff', 0.9, 3);
+    this.game.effects.burst(p.x, p.y, '#e7d2ff', 30, 140, 0.8, 3);
   }
 
   shieldSelf(ctx, o) {

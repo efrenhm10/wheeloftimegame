@@ -247,6 +247,8 @@ export class Player {
     this.equippedArtifact = null;
     this.radius = 12;
     this.runMods = { potency: 1, strain: 1, dangerDecay: 1 };
+    // Tower politics state; owned and normalized by towerPolitics.js.
+    this.politics = null;
     this.resetRuntime(0, 0);
   }
 
@@ -274,6 +276,7 @@ export class Player {
   }
 
   get title() {
+    if (this.flags.amyrlin) return 'The Amyrlin Seat';
     if (this.rank.id === 'aes_sedai' && this.ajahDef) return `Aes Sedai of the ${this.ajahDef.name} Ajah`;
     return this.rank.title;
   }
@@ -701,6 +704,7 @@ export class Player {
       warders: this.warders.map((w) => ({ ...w })),
       artifacts: this.artifacts.slice(),
       equippedArtifact: this.equippedArtifact,
+      politics: this.politics ? JSON.parse(JSON.stringify(this.politics)) : null,
     };
   }
 
@@ -729,6 +733,7 @@ export class Player {
     p.warders = Array.isArray(data.warders) ? data.warders.filter((w) => w && typeof w.name === 'string').map((w) => ({ name: w.name, alive: !!w.alive })) : [];
     p.artifacts = Array.isArray(data.artifacts) ? data.artifacts.filter((a) => typeof a === 'string') : [];
     p.equippedArtifact = p.artifacts.includes(data.equippedArtifact) ? data.equippedArtifact : null;
+    p.politics = data.politics && typeof data.politics === 'object' ? data.politics : null;
     p.resetRuntime(0, 0);
     return p;
   }

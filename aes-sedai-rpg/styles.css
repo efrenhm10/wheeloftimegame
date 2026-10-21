@@ -1509,3 +1509,183 @@ input[type='text']:focus {
     transition: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ Tower politics */
+
+.week-bar {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--panel-solid);
+  border: 1px solid var(--panel-border);
+  font: 0.86rem var(--font-ui);
+}
+
+.week-bar__week {
+  font: 700 1rem var(--font-body);
+  color: var(--gold-strong);
+}
+
+.week-bar .btn {
+  margin-left: auto;
+}
+
+.week-bar .pips {
+  color: var(--gold-strong);
+}
+
+.checklist {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+  font: 0.86rem var(--font-ui);
+}
+
+.checklist__item--met {
+  color: var(--good);
+}
+
+.checklist__item--open {
+  color: var(--text);
+}
+
+.meter-row {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.meter-row p {
+  margin: 0;
+  font: 0.76rem var(--font-ui);
+}
+
+.meter-row__head {
+  display: flex;
+  justify-content: space-between;
+  font: 0.84rem var(--font-ui);
+}
+
+.meter-row__value {
+  font: 600 0.8rem var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.meter {
+  --fill: 0;
+  --accent: var(--gold);
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #241f2c;
+}
+
+.meter__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(var(--fill));
+  background: var(--accent);
+}
+
+.meter--good {
+  --accent: var(--good);
+}
+
+.meter--warn {
+  --accent: var(--warn);
+}
+
+.meter--critical {
+  --accent: var(--danger);
+}
+
+.influence-row {
+  display: grid;
+  grid-template-columns: 9em 1fr 2.5em;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font: 0.84rem var(--font-ui);
+}
+
+.influence-row .meter-row__value {
+  text-align: right;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panel--wide {
+  grid-column: 1 / -1;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.roster {
+  width: 100%;
+  border-collapse: collapse;
+  font: 0.84rem var(--font-ui);
+}
+
+.roster th,
+.roster td {
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  white-space: nowrap;
+}
+
+.roster th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.roster .num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ajah-dot {
+  --accent: #fff;
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.rel--above {
+  color: var(--good);
+}
+
+.rel--below {
+  color: var(--warn);
+}
+
+.log-entry {
+  margin: 0 0 6px;
+  font-size: 0.86rem;
+}
+
+.log-entry--unrest,
+.log-entry--conflict {
+  color: #ffb3ad;
+}
+
+.tag--social {
+  color: var(--gold-strong);
+}
